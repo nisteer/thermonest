@@ -3,16 +3,6 @@
 
 A simple and modern IoT sensors monitor.
 
-
-
-
-# ThermoNest
-
-A simple and modern IoT sensors monitor.
-
-
-
-
 ## Installation
 
 Dependencies
