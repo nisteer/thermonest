@@ -1,5 +1,6 @@
 const express = require('express');
 const { InfluxDB } = require('@influxdata/influxdb-client');
+const cors = require('cors');
 const { Server } = require('socket.io');
 const http = require('http');
 const config = require('./config');
@@ -13,31 +14,33 @@ const port = process.env.PORT || 5000;
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-// Custom CORS middleware to set headers
-app.use(function(req, res, next) {
-  const allowedOrigins = ['http://localhost:3000', 'https://thermonest.vercel.app', 'https://thermonest-server.onrender.com'];
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.setHeader("Access-Control-Allow-Credentials", true);
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, UPDATE");
-  
-  // Handle preflight OPTIONS request
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+// CORS configuration for production (OnRender) and development (localhost)
+const allowedOrigins = [
+  'http://localhost:3000',  // Local development
+  'https://thermonest.vercel.app',  // Frontend URL
+  'https://thermonest-server.onrender.com', // Backend URL
+];
 
-  next();
-});
+app.use(cors({
+  origin: (origin, callback) => {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true); // Allow requests from allowed origins
+    } else {
+      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
+    }
+  },
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000', 'https://thermonest.vercel.app'],
-    methods: ["GET", "POST"]
-  }
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true, // Allow cookies to be sent with requests if needed
+  },
 });
 
 // Emit real-time sensor data only for "1h"
