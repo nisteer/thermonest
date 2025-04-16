@@ -6,13 +6,24 @@ const http = require('http');
 const config = require('./config');
 
 const app = express();
-const port = 5000;
 
+// Use PORT environment variable for OnRender or default to 5000 in development
+const port = process.env.PORT || 5000;
+
+// InfluxDB config (make sure these values are set in your OnRender environment variables)
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
+// CORS configuration for production (OnRender) and development (localhost)
+const allowedOrigins = ['http://localhost:3000', 'https://your-app-name.onrender.com']; // Update with your actual OnRender frontend URL
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: (origin, callback) => {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true); // Allow requests from allowed origins
+    } else {
+      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
+    }
+  },
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
 }));
@@ -20,7 +31,7 @@ app.use(cors({
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
   }
 });
