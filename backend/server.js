@@ -16,6 +16,7 @@ const influxDB = new InfluxDB({ url, token });
 
 // CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
+  'http://localhost:3000',  // Local development
   'https://thermonest.vercel.app',  // Frontend URL
   'https://thermonest-server.onrender.com', // Backend URL
 ];
@@ -132,5 +133,5 @@ app.get('/api/sensors', async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`HTTP server running`);
+  console.log(`HTTP server running at http://localhost:${port}`);
 });
