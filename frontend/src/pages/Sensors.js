@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Line } from 'react-chartjs-2';
-import {
-  Paper,
-  Typography,
-  Box,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
-} from '@mui/material';
+import { Box, Paper, Typography, FormControl, InputLabel, MenuItem, Select } from '@mui/material';
 import { format, parseISO } from 'date-fns';
 import {
   Chart as ChartJS,
@@ -22,6 +14,7 @@ import {
   Legend,
 } from 'chart.js';
 import '../App.css';
+import { io } from "socket.io-client";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -37,6 +30,11 @@ const Sensors = ({ theme }) => {
     { label: 'Last 14 Days', value: '336h' },
     { label: 'Last 30 Days', value: '720h' },
   ];
+
+  const socket = io('https://thermonest-server.onrender.com', {
+    transports: ['websocket', 'polling'],
+    withCredentials: true,
+  });
 
   const isLongTerm = ['168h', '336h', '720h'].includes(filter);
   const isMidTerm = ['6h', '24h'].includes(filter);
@@ -97,26 +95,23 @@ const Sensors = ({ theme }) => {
       const res = await axios.get('https://thermonest-server.onrender.com/api/sensors', {
         params: { from },
       });
-  
-      console.log(res.data); // Log raw data
-  
+
       const data = res.data || [];
       let labels = [], humidityData = [], temperatureData = [];
-  
-      // Process the data based on the selected filter
+
       if (isLongTerm) {
         const grouped = {};
         data.forEach(item => {
           const day = format(new Date(item._time), 'dd-MM');
           if (!grouped[day]) grouped[day] = { humidity: [], temperature: [] };
-  
+
           const hum = item.humidity ?? null;
           const temp = item.temperature ?? null;
-  
+
           if (hum !== null && !isNaN(hum)) grouped[day].humidity.push(hum);
           if (temp !== null && !isNaN(temp)) grouped[day].temperature.push(temp);
         });
-  
+
         labels = Object.keys(grouped);
         humidityData = labels.map(day => {
           const values = grouped[day].humidity;
@@ -129,18 +124,18 @@ const Sensors = ({ theme }) => {
       } else if (isMidTerm) {
         const interval = filter === '6h' ? 5 : 15;
         const grouped = {};
-  
+
         data.forEach(item => {
           const time = roundToInterval(item._time, interval);
           if (!grouped[time]) grouped[time] = { humidity: [], temperature: [] };
-  
+
           const hum = item.humidity ?? item._value;
           const temp = item.temperature ?? item._value;
-  
+
           if (hum !== null && !isNaN(hum)) grouped[time].humidity.push(hum);
           if (temp !== null && !isNaN(temp)) grouped[time].temperature.push(temp);
         });
-  
+
         labels = Object.keys(grouped);
         humidityData = labels.map(time => {
           const values = grouped[time].humidity;
@@ -150,88 +145,93 @@ const Sensors = ({ theme }) => {
           const values = grouped[time].temperature;
           return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
         });
-      } else {
-        labels = data.map(item => format(parseISO(item._time), 'HH:mm:ss'));
-        humidityData = data.map(item => item.humidity ?? item._value ?? null);
-        temperatureData = data.map(item => item.temperature ?? item._value ?? null);
       }
-  
-      // Debug the processed data
-      console.log(labels, humidityData, temperatureData);
-  
+
       setHumidityChartData({
         labels,
-        datasets: [
-          {
-            label: isLongTerm || isMidTerm ? 'Avg Humidity (%)' : 'Humidity (%)',
-            data: humidityData,
-            borderColor: 'rgba(76, 208, 225, 1)',
-            backgroundColor: 'rgba(76, 208, 225, 0.3)',
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 4,
-            pointBackgroundColor: 'rgba(76, 208, 225, 1)',
-          },
-        ],
+        datasets: [{
+          label: 'Humidity',
+          data: humidityData,
+          fill: false,
+          borderColor: '#60a5fa',
+          tension: 0.1,
+        }],
       });
-  
+
       setTemperatureChartData({
         labels,
-        datasets: [
-          {
-            label: isLongTerm || isMidTerm ? 'Avg Temperature (°C)' : 'Temperature (°C)',
-            data: temperatureData,
-            borderColor: 'rgba(239, 83, 80, 1)',
-            backgroundColor: 'rgba(239, 83, 80, 0.3)',
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 4,
-            pointBackgroundColor: 'rgba(239, 83, 80, 1)',
-          },
-        ],
+        datasets: [{
+          label: 'Temperature',
+          data: temperatureData,
+          fill: false,
+          borderColor: '#f87171',
+          tension: 0.1,
+        }],
       });
+
+      socket.emit('setTimeRange', filter);
+
     } catch (error) {
-      console.error('Fetch data error:', error);
+      console.error('Error fetching data:', error);
     }
-  }, [filter, isLongTerm, isMidTerm]);
-  
+  }, [filter, isLongTerm, isMidTerm, socket]);
 
   useEffect(() => {
-    setHumidityChartData({ labels: [], datasets: [] });
-    setTemperatureChartData({ labels: [], datasets: [] });
     fetchData();
-  }, [filter, fetchData]);
+  }, [fetchData]);
+
+  useEffect(() => {
+    socket.on('humidity', data => {
+      if (data.length) {
+        setHumidityChartData(prev => ({
+          ...prev,
+          datasets: [{ ...prev.datasets[0], data: data }],
+        }));
+      }
+    });
+
+    socket.on('temperature', data => {
+      if (data.length) {
+        setTemperatureChartData(prev => ({
+          ...prev,
+          datasets: [{ ...prev.datasets[0], data: data }],
+        }));
+      }
+    });
+
+    return () => {
+      socket.off('humidity');
+      socket.off('temperature');
+    };
+  }, [socket]);
 
   return (
-    <Box sx={{ p: 3 }}>
-      <FormControl fullWidth sx={{ mb: 3 }}>
-        <InputLabel id="time-range-label">Select Time Range</InputLabel>
+    <Box>
+      <FormControl fullWidth>
+        <InputLabel>Time Range</InputLabel>
         <Select
-          labelId="time-range-label"
           value={filter}
-          label="Select Time Range"
           onChange={(e) => setFilter(e.target.value)}
+          label="Time Range"
         >
-          {filterOptions.map(option => (
-            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+          {filterOptions.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
           ))}
         </Select>
       </FormControl>
 
-      <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h6" gutterBottom sx={{ color: theme.palette.text.primary }}>
-          Humidity Chart
-        </Typography>
-        <div className="chart-container">
+      <Paper sx={{ mt: 3, padding: 2 }}>
+        <Typography variant="h6" align="center">Humidity</Typography>
+        <div style={{ height: '300px' }}>
           <Line data={humidityChartData} options={chartOptions} />
         </div>
       </Paper>
 
-      <Paper elevation={3} sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ color: theme.palette.text.primary }}>
-          Temperature Chart
-        </Typography>
-        <div className="chart-container">
+      <Paper sx={{ mt: 3, padding: 2 }}>
+        <Typography variant="h6" align="center">Temperature</Typography>
+        <div style={{ height: '300px' }}>
           <Line data={temperatureChartData} options={chartOptions} />
         </div>
       </Paper>
