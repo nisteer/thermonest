@@ -6,42 +6,34 @@ const http = require('http');
 const config = require('./config');
 
 const app = express();
-
-// Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
 
-// InfluxDB config (make sure these values are set in your OnRender environment variables)
+// InfluxDB config
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-// CORS configuration for production (OnRender) and development (localhost)
+// CORS configuration
 const allowedOrigins = [
-  'http://localhost:3000',  // Local development
-  'https://thermonest.vercel.app',  // Frontend URL
-  'https://thermonest-server.onrender.com', // Backend URL
+  'http://localhost:3000',
+  'https://thermonest.vercel.app',
+  'https://thermonest-server.onrender.com'
 ];
 
-// Enhanced CORS configuration
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
     const msg = `The CORS policy for this site does not allow access from ${origin}`;
     return callback(new Error(msg), false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 app.use(cors(corsOptions));
-
-// Handle preflight requests
 app.options('*', cors(corsOptions));
 
 const server = http.createServer(app);
@@ -53,7 +45,7 @@ const io = new Server(server, {
   }
 });
 
-// Emit real-time sensor data only for "1h"
+// Emit real-time sensor data
 const emitSensorData = async (measurement, eventName) => {
   try {
     const queryApi = influxDB.getQueryApi(org);
@@ -100,27 +92,24 @@ io.on('connection', (socket) => {
   });
 });
 
-// REST API: Fetch historical data
+// REST API endpoint
 app.get('/api/sensors', async (req, res) => {
   const { from } = req.query;
-
-  // Sanitize 'from' to prevent query injection
   const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
+  
   if (!allowedRanges.includes(from)) {
     return res.status(400).json({ error: 'Invalid "from" query parameter' });
   }
 
   try {
     const queryApi = influxDB.getQueryApi(org);
-    const query = `
-      from(bucket: "${bucket}")
-        |> range(start: ${from}) 
-        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
-        |> filter(fn: (r) => r._field == "value")
-        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
-        |> keep(columns: ["_time", "temperature", "humidity"])
-        |> sort(columns: ["_time"])
-    `;
+    const query = `from(bucket: "${bucket}")
+      |> range(start: ${from})
+      |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
+      |> filter(fn: (r) => r._field == "value")
+      |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
+      |> keep(columns: ["_time", "temperature", "humidity"])
+      |> sort(columns: ["_time"])`;
 
     const data = [];
     await queryApi.queryRows(query, {
@@ -142,14 +131,11 @@ app.get('/api/sensors', async (req, res) => {
   }
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   if (err.message.includes('CORS')) {
-    // Handle CORS errors
     return res.status(403).json({ error: err.message });
   }
-  
-  // Handle other errors
   console.error(err.stack);
   res.status(500).json({ error: 'Internal Server Error' });
 });
