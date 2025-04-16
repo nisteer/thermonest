@@ -17,27 +17,39 @@ const influxDB = new InfluxDB({ url, token });
 // CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
   'http://localhost:3000',  // Local development
-  'https://thermonest.vercel.app/',  // Frontend URL
+  'https://thermonest.vercel.app',  // Frontend URL
   'https://thermonest-server.onrender.com', // Backend URL
 ];
 
-app.use(cors({
+// Enhanced CORS configuration
+const corsOptions = {
   origin: (origin, callback) => {
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true); // Allow requests from allowed origins
-    } else {
-      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+    
+    const msg = `The CORS policy for this site does not allow access from ${origin}`;
+    return callback(new Error(msg), false);
   },
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
@@ -130,6 +142,19 @@ app.get('/api/sensors', async (req, res) => {
   }
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  if (err.message.includes('CORS')) {
+    // Handle CORS errors
+    return res.status(403).json({ error: err.message });
+  }
+  
+  // Handle other errors
+  console.error(err.stack);
+  res.status(500).json({ error: 'Internal Server Error' });
+});
+
 server.listen(port, () => {
-  console.log(`HTTP server running at http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
+  console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
 });
