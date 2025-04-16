@@ -1,105 +1,119 @@
 const express = require('express');
 const { InfluxDB } = require('@influxdata/influxdb-client');
 const cors = require('cors');
-const http = require('http');
 const { Server } = require('socket.io');
-const config = require('./config');  // Importa la configurazione
+const http = require('http');
+const config = require('./config');
 
 const app = express();
 const port = 5000;
 
-// Configurazione InfluxDB dalla configurazione esterna
 const { url, token, org, bucket } = config.influxDB;
-
 const influxDB = new InfluxDB({ url, token });
 
-// Configurazione CORS per consentire le richieste dal frontend
 app.use(cors({
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+  origin: 'http://localhost:3000',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
 }));
 
-// Avvia il server WebSocket
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:3000", 
-        methods: ["GET", "POST"],
-    }
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
+  }
 });
 
-// Funzione per inviare i dati di umidità
-const sendHumidityData = async () => {
-    try {
-        const queryApi = influxDB.getQueryApi(org);
-        const query = `from(bucket: "${bucket}")
-            |> range(start: -24h)
-            |> filter(fn: (r) => r._measurement == "humidity")
-            |> filter(fn: (r) => r._field == "value")`;
+// Emit real-time sensor data only for "1h"
+const emitSensorData = async (measurement, eventName) => {
+  try {
+    const queryApi = influxDB.getQueryApi(org);
+    const query = `from(bucket: "${bucket}")
+      |> range(start: -1h)
+      |> filter(fn: (r) => r._measurement == "${measurement}")
+      |> filter(fn: (r) => r._field == "value")`;
 
-        const data = [];
-        await queryApi.queryRows(query, {
-            next(row, tableMeta) {
-                const o = tableMeta.toObject(row);
-                data.push(o);
-            },
-            error(error) {
-                console.error('Errore durante la query di umidità:', error);
-            },
-            complete() {
-                console.log('Dati di umidità inviati:', data); 
-                io.emit('humidity', data); // Invia i dati tramite WebSocket
-            }
-        });
-    } catch (error) {
-        console.error('Errore durante il recupero dei dati di umidità:', error);
-    }
+    const data = [];
+    await queryApi.queryRows(query, {
+      next(row, tableMeta) {
+        const o = tableMeta.toObject(row);
+        data.push(o);
+      },
+      error(error) {
+        console.error(`Error querying ${measurement}:`, error);
+      },
+      complete() {
+        io.emit(eventName, data);
+      }
+    });
+  } catch (error) {
+    console.error(`Error fetching ${measurement}:`, error);
+  }
 };
 
-// Funzione per inviare i dati di temperatura
-const sendTemperatureData = async () => {
-    try {
-        const queryApi = influxDB.getQueryApi(org);
-        const query = `from(bucket: "${bucket}")
-            |> range(start: -24h)
-            |> filter(fn: (r) => r._measurement == "temperature")
-            |> filter(fn: (r) => r._field == "value")`;
-
-        const data = [];
-        await queryApi.queryRows(query, {
-            next(row, tableMeta) {
-                const o = tableMeta.toObject(row);
-                data.push(o);
-            },
-            error(error) {
-                console.error('Errore durante la query della temperatura:', error);
-            },
-            complete() {
-                console.log('Dati di temperatura inviati:', data); 
-                io.emit('temperature', data); // Invia i dati tramite WebSocket
-            }
-        });
-    } catch (error) {
-        console.error('Errore durante il recupero dei dati di temperatura:', error);
-    }
-};
-
-// Funzione per inviare i dati ogni 5 secondi
-const sendDataPeriodically = () => {
-    setInterval(() => {
-        sendHumidityData();
-        sendTemperatureData();
-    }, 5000); // Invia ogni 5 secondi
-};
-
-// Gestisce la connessione di un client
+let intervalId;
 io.on('connection', (socket) => {
-    console.log('Utente connesso');
-    sendDataPeriodically(); // Invia dati periodicamente
+  console.log('Client connected:', socket.id);
+
+  socket.on('setTimeRange', (range) => {
+    if (intervalId) clearInterval(intervalId);
+    if (range === '1h') {
+      intervalId = setInterval(() => {
+        emitSensorData('humidity', 'humidity');
+        emitSensorData('temperature', 'temperature');
+      }, 5000);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    if (intervalId) clearInterval(intervalId);
+  });
 });
 
-// Avvia il server su http://localhost:5000
+// REST API: Fetch historical data
+app.get('/api/sensors', async (req, res) => {
+  const { from } = req.query;
+
+  // Sanitize 'from' to prevent query injection
+  const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
+  if (!allowedRanges.includes(from)) {
+    return res.status(400).json({ error: 'Invalid "from" query parameter' });
+  }
+
+  try {
+    const queryApi = influxDB.getQueryApi(org);
+    const query = `
+      from(bucket: "${bucket}")
+        |> range(start: ${from}) 
+        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
+        |> filter(fn: (r) => r._field == "value")
+        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
+        |> keep(columns: ["_time", "temperature", "humidity"])
+        |> sort(columns: ["_time"])
+    `;
+
+    const data = [];
+    await queryApi.queryRows(query, {
+      next(row, tableMeta) {
+        const o = tableMeta.toObject(row);
+        data.push(o);
+      },
+      error(error) {
+        console.error('Query error:', error);
+        res.status(500).json({ error: error.toString() });
+      },
+      complete() {
+        res.json(data);
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching sensor data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 server.listen(port, () => {
-    console.log(`Server WebSocket avviato su http://localhost:${port}`);
+  console.log(`HTTP server running at http://localhost:${port}`);
 });
