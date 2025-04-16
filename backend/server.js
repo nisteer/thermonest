@@ -15,7 +15,7 @@ const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
 // CORS configuration for production (OnRender) and development (localhost)
-const allowedOrigins = ['http://localhost:3000', 'https://your-app-name.onrender.com']; // Update with your actual OnRender frontend URL
+const allowedOrigins = ['http://localhost:3000', 'https://your-https://thermonest-server.onrender.com/-name.onrender.com']; // Update with your actual OnRender frontend URL
 app.use(cors({
   origin: (origin, callback) => {
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
