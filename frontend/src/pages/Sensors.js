@@ -93,10 +93,9 @@ const Sensors = ({ theme }) => {
 
   const fetchData = useCallback(async () => {
     try {
-      // Convert "6h" to "-6h" for InfluxDB-compatible query
       const from = `-${filter}`;
 
-      const res = await axios.get('http://localhost:5000/api/sensors', {
+      const res = await axios.get('https://thermonest-server.onrender.com/api/sensors', {
         params: { from },
       });
 
@@ -126,7 +125,7 @@ const Sensors = ({ theme }) => {
           return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
         });
       } else if (isMidTerm) {
-        const interval = filter === '6h' ? 5 : 15; // minutes
+        const interval = filter === '6h' ? 5 : 15;
         const grouped = {};
 
         data.forEach(item => {
