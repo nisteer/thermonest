@@ -94,27 +94,29 @@ const Sensors = ({ theme }) => {
   const fetchData = useCallback(async () => {
     try {
       const from = `-${filter}`;
-
       const res = await axios.get('https://thermonest-server.onrender.com/api/sensors', {
         params: { from },
       });
-
+  
+      console.log(res.data); // Log raw data
+  
       const data = res.data || [];
       let labels = [], humidityData = [], temperatureData = [];
-
+  
+      // Process the data based on the selected filter
       if (isLongTerm) {
         const grouped = {};
         data.forEach(item => {
           const day = format(new Date(item._time), 'dd-MM');
           if (!grouped[day]) grouped[day] = { humidity: [], temperature: [] };
-
+  
           const hum = item.humidity ?? null;
           const temp = item.temperature ?? null;
-
+  
           if (hum !== null && !isNaN(hum)) grouped[day].humidity.push(hum);
           if (temp !== null && !isNaN(temp)) grouped[day].temperature.push(temp);
         });
-
+  
         labels = Object.keys(grouped);
         humidityData = labels.map(day => {
           const values = grouped[day].humidity;
@@ -127,18 +129,18 @@ const Sensors = ({ theme }) => {
       } else if (isMidTerm) {
         const interval = filter === '6h' ? 5 : 15;
         const grouped = {};
-
+  
         data.forEach(item => {
           const time = roundToInterval(item._time, interval);
           if (!grouped[time]) grouped[time] = { humidity: [], temperature: [] };
-
+  
           const hum = item.humidity ?? item._value;
           const temp = item.temperature ?? item._value;
-
+  
           if (hum !== null && !isNaN(hum)) grouped[time].humidity.push(hum);
           if (temp !== null && !isNaN(temp)) grouped[time].temperature.push(temp);
         });
-
+  
         labels = Object.keys(grouped);
         humidityData = labels.map(time => {
           const values = grouped[time].humidity;
@@ -153,7 +155,10 @@ const Sensors = ({ theme }) => {
         humidityData = data.map(item => item.humidity ?? item._value ?? null);
         temperatureData = data.map(item => item.temperature ?? item._value ?? null);
       }
-
+  
+      // Debug the processed data
+      console.log(labels, humidityData, temperatureData);
+  
       setHumidityChartData({
         labels,
         datasets: [
@@ -169,7 +174,7 @@ const Sensors = ({ theme }) => {
           },
         ],
       });
-
+  
       setTemperatureChartData({
         labels,
         datasets: [
@@ -189,6 +194,7 @@ const Sensors = ({ theme }) => {
       console.error('Fetch data error:', error);
     }
   }, [filter, isLongTerm, isMidTerm]);
+  
 
   useEffect(() => {
     setHumidityChartData({ labels: [], datasets: [] });
