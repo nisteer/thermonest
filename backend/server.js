@@ -18,7 +18,7 @@ const influxDB = new InfluxDB({ url, token });
 const allowedOrigins = [
   'http://localhost:3000',  // Local development
   'https://thermonest.vercel.app/',  // Frontend URL
-  'https://thermonest-server.onrender.com/', // Backend URL
+  'https://thermonest-server.onrender.com', // Backend URL
 ];
 
 app.use(cors({
