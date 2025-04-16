@@ -40,7 +40,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 ChartJS.register(LineElement, CategoryScale, LinearScale, PointElement, Tooltip);
 
-const socket = io('http://localhost:5000');
+const socket = io('https://thermonest-server.onrender.com');
 
 const Dashboard = () => {
   const theme = useTheme();
@@ -59,13 +59,10 @@ const Dashboard = () => {
   const lastTemperatureAlertTime = useRef(null);
   const [detailsType, setDetailsType] = useState(null);
 
-
-
   const handleShowDetails = (type) => {
     setDetailsType(type);
     setDetailsDialogOpen(true);
   };
-  
 
   useEffect(() => {
     socket.emit('setTimeRange', '1h');
@@ -165,7 +162,6 @@ const Dashboard = () => {
       );
     }
   }, [temperature]);
-  
 
   const miniChartOptions = {
     responsive: true,
@@ -318,60 +314,53 @@ const Dashboard = () => {
 
       <Grid container spacing={4}>
         <Grid item xs={12} sm={6} md={4}>
-          {renderCard('temp', <TempIcon fontSize="large" />, 'Temperature', temperature, '°C', tempHistory, '#EF5350')}
+          {renderCard('temp', <TempIcon fontSize="large" />, 'Temperature', temperature, '°C', tempHistory, theme.palette.primary.main)}
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
-          {renderCard('humidity', <HumidityIcon fontSize="large" />, 'Humidity', humidity, '%', humidityHistory, '#4DD0E1')}
+          {renderCard('humidity', <HumidityIcon fontSize="large" />, 'Humidity', humidity, '%', humidityHistory, theme.palette.secondary.main)}
         </Grid>
-        {showMaxWidget && (
-          <Grid item xs={12} sm={6} md={4}>
-            {renderMaxWidget()}
-          </Grid>
-        )}
+        <Grid item xs={12} sm={6} md={4}>
+          {showMaxWidget && renderMaxWidget()}
+        </Grid>
       </Grid>
 
       <SpeedDial
-        ariaLabel="Add Widget"
-        sx={{ position: 'fixed', bottom: 32, right: 32 }}
+        ariaLabel="Open widget dialog"
         icon={<AddIcon />}
         onClick={() => setDialogOpen(true)}
+        sx={{
+          position: 'fixed',
+          bottom: 16,
+          right: 16,
+        }}
       />
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-        <DialogTitle>Select a Widget to Add</DialogTitle>
+        <DialogTitle>Select Widget</DialogTitle>
         <DialogContent>
           <List>
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => handleWidgetSelect('max')}>
-                <ListItemIcon>
-                  <MaxWidgetIcon />
-                </ListItemIcon>
-                <ListItemText primary="Max Temp & Humidity (Last Hour)" />
-              </ListItemButton>
-            </ListItem>
+            <ListItemButton onClick={() => handleWidgetSelect('max')}>
+              <ListItemIcon>
+                <MaxWidgetIcon />
+              </ListItemIcon>
+              <ListItemText primary="Max Temp & Humidity" />
+            </ListItemButton>
           </List>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} color="primary">
-            Cancel
+            Close
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={detailsDialogOpen} onClose={() => setDetailsDialogOpen(false)}>
-        <DialogTitle>
-          {detailsType === 'humidity' ? 'Humidity Details' : 'Temperature Details'}
-        </DialogTitle>
+        <DialogTitle>{detailsType} Details</DialogTitle>
         <DialogContent>
-          <Typography gutterBottom>
-            {detailsType === 'humidity' ? (
-              'Maintaining proper humidity is crucial for comfort and health. Extremely low or high humidity can lead to respiratory problems, skin issues, and even affect electronics.'
-            ) : (
-              'Maintaining an optimal temperature (18°C–26°C) is important for comfort, sleep quality, and energy efficiency. Temperatures outside this range can lead to discomfort, poor concentration, and increased energy use.'
-            )}
+          <Typography variant="body1">
+            More details about {detailsType} will go here...
           </Typography>
         </DialogContent>
-
         <DialogActions>
           <Button onClick={() => setDetailsDialogOpen(false)} color="primary">
             Close
