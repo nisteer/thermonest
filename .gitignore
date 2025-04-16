@@ -24,5 +24,4 @@ yarn-debug.log*
 yarn-error.log*
 config.js
 config.py
-localhost+2.pem
-localhost+2-key.pem
+vercel.json
