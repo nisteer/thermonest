@@ -5,7 +5,6 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Sensors from './pages/Sensors';
-import Phone from './pages/Phone';  // Import the Phone component
 
 const lightTheme = createTheme({
   palette: {
@@ -63,8 +62,6 @@ const App = () => {
               <Route path="/" element={<Dashboard />} />
               {/* Pass the current theme to Sensors */}
               <Route path="/sensors" element={<Sensors theme={useDarkTheme ? darkTheme : lightTheme} />} />
-              {/* Add route for the Phone component */}
-              <Route path="/phone" element={<Phone />} />
             </Routes>
           </Box>
         </Box>
