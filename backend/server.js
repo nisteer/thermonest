@@ -6,46 +6,42 @@ const http = require('http');
 const config = require('./config');
 
 const app = express();
+
+// Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
 
-// InfluxDB config
+// InfluxDB config (make sure these values are set in your OnRender environment variables)
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-// CORS configuration
+// CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
-  'http://localhost:3000',
-  'https://thermonest.vercel.app',
-  'https://thermonest-server.onrender.com'
+  'http://localhost:3000',  // Local development
+  'https://thermonest.vercel.app',  // Frontend URL
+  'https://thermonest-server.onrender.com', // Backend URL
 ];
 
-const corsOptions = {
+app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true); // Allow requests from allowed origins
+    } else {
+      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
     }
-    const msg = `The CORS policy for this site does not allow access from ${origin}`;
-    return callback(new Error(msg), false);
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true
   }
 });
 
-// Emit real-time sensor data
+// Emit real-time sensor data only for "1h"
 const emitSensorData = async (measurement, eventName) => {
   try {
     const queryApi = influxDB.getQueryApi(org);
@@ -92,24 +88,27 @@ io.on('connection', (socket) => {
   });
 });
 
-// REST API endpoint
+// REST API: Fetch historical data
 app.get('/api/sensors', async (req, res) => {
   const { from } = req.query;
+
+  // Sanitize 'from' to prevent query injection
   const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
-  
   if (!allowedRanges.includes(from)) {
     return res.status(400).json({ error: 'Invalid "from" query parameter' });
   }
 
   try {
     const queryApi = influxDB.getQueryApi(org);
-    const query = `from(bucket: "${bucket}")
-      |> range(start: ${from})
-      |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
-      |> filter(fn: (r) => r._field == "value")
-      |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
-      |> keep(columns: ["_time", "temperature", "humidity"])
-      |> sort(columns: ["_time"])`;
+    const query = `
+      from(bucket: "${bucket}")
+        |> range(start: ${from}) 
+        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
+        |> filter(fn: (r) => r._field == "value")
+        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
+        |> keep(columns: ["_time", "temperature", "humidity"])
+        |> sort(columns: ["_time"])
+    `;
 
     const data = [];
     await queryApi.queryRows(query, {
@@ -131,16 +130,6 @@ app.get('/api/sensors', async (req, res) => {
   }
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-  if (err.message.includes('CORS')) {
-    return res.status(403).json({ error: err.message });
-  }
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal Server Error' });
-});
-
 server.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+  console.log(`HTTP server running at http://localhost:${port}`);
 });
