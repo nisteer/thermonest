@@ -12,7 +12,6 @@ import {
   DialogActions,
   Button,
   List,
-  ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
@@ -96,8 +95,8 @@ const Dashboard = () => {
     const oneHour = 60 * 60 * 1000;
 
     if (
-      humidity !== null &&
-      (humidity < 30 || humidity > 50) &&
+      humidity == null ||
+      (humidity < 30 || humidity > 50) ||
       (!lastHumidityAlertTime.current || now - lastHumidityAlertTime.current >= oneHour)
     ) {
       lastHumidityAlertTime.current = now;
@@ -355,11 +354,23 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={detailsDialogOpen} onClose={() => setDetailsDialogOpen(false)}>
-        <DialogTitle>{detailsType} Details</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1">
-            More details about {detailsType} will go here...
-          </Typography>
+        <DialogTitle>
+          {detailsType === 'temperature' ? 'Temperature Details' : 'Humidity Details'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {detailsType === 'temperature' ? (
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              The recommended indoor temperature range is between <strong>18°C and 26°C</strong>. 
+              Temperatures below 18°C may feel uncomfortable and increase heating costs, while 
+              temperatures above 26°C can lead to discomfort or potential heat stress.
+            </Typography>
+          ) : (
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Optimal indoor humidity should be between <strong>30% and 50%</strong>. 
+              Low humidity can cause dry skin, irritation, and static electricity.
+              High humidity may lead to mold growth, discomfort, and respiratory issues.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDetailsDialogOpen(false)} color="primary">
@@ -367,7 +378,6 @@ const Dashboard = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
       <ToastContainer />
     </Box>
   );
