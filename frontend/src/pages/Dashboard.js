@@ -95,8 +95,8 @@ const Dashboard = () => {
     const oneHour = 60 * 60 * 1000;
 
     if (
-      humidity == null ||
-      (humidity < 30 || humidity > 50) ||
+      humidity !== null &&
+      (humidity < 30 || humidity > 50) &&
       (!lastHumidityAlertTime.current || now - lastHumidityAlertTime.current >= oneHour)
     ) {
       lastHumidityAlertTime.current = now;
