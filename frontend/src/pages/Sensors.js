@@ -203,7 +203,7 @@ const Sensors = ({ theme }) => {
   }, [filter, fetchData]);
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, mt: 4}}>
       <FormControl fullWidth sx={{ mb: 3 }}>
         <InputLabel id="time-range-label">Select Time Range</InputLabel>
         <Select

@@ -22,3 +22,7 @@
   height: 100% !important;  /* Force chart to fill the container */
   display: block;
 }
+
+html {
+  overflow: hidden;
+}

@@ -7,7 +7,7 @@ import {
   Switch,
   Box,
   IconButton,
-  Button
+  Button,
 } from '@mui/material';
 import { WbSunny, NightsStay } from '@mui/icons-material';
 import { useAuth0 } from '@auth0/auth0-react';
@@ -16,15 +16,15 @@ const Navbar = ({ useDarkTheme, toggleTheme }) => {
   const { loginWithRedirect, logout, isAuthenticated, user, isLoading } = useAuth0();
 
   return (
-    <AppBar position="sticky" color="primary">
+    <AppBar position="fixed" color="primary" sx={{ width: '100%', zIndex: 1300 }}>
       <Toolbar sx={{ justifyContent: 'space-between' }}>
         {/* Left side - App title or user */}
-        <Typography variant="h6" component="div">
+        <Typography variant="h6" component="div" noWrap>
           {isAuthenticated && !isLoading ? `Welcome, ${user.name}` : 'Env Dashboard'}
         </Typography>
 
         {/* Right side - Theme toggle and auth buttons */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <IconButton color="inherit" size="small">
             <WbSunny fontSize="small" />
           </IconButton>

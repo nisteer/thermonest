@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Drawer,
   List,
@@ -9,15 +9,11 @@ import {
   Toolbar,
   Divider,
   Box,
-  Typography,
-  IconButton,
   useTheme,
 } from '@mui/material';
 import { Link } from 'react-router-dom';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeviceThermostatIcon from '@mui/icons-material/DeviceThermostat';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useMediaQuery } from '@mui/material';
 
 const drawerWidth = 240;
@@ -26,11 +22,9 @@ const collapsedWidth = 72;
 const Sidebar = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [open, setOpen] = useState(!isMobile);
 
-  const handleToggleDrawer = () => {
-    setOpen(!open);
-  };
+  // Sidebar open/close state based on screen size (no manual toggle)
+  const open = !isMobile;
 
   return (
     <Drawer
@@ -62,23 +56,6 @@ const Sidebar = () => {
           overflow: 'hidden', // Ensure no overflow in toolbar
         }}
       >
-        {open ? (
-          <Typography 
-            variant="h6" 
-            noWrap 
-            component="div"
-            sx={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: 'calc(100% - 40px)' // Ensure text doesn't overflow toggle button
-            }}
-          >
-            ThermoNest
-          </Typography>
-        ) : null}
-        <IconButton onClick={handleToggleDrawer}>
-          {open ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-        </IconButton>
       </Toolbar>
       
       <Divider />

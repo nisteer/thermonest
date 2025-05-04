@@ -307,7 +307,7 @@ const Dashboard = () => {
         minHeight: '100vh',
       }}
     >
-      <Typography variant="h4" fontWeight="bold" mb={4} color="text.primary">
+      <Typography variant="h4" fontWeight="bold" mb={4} mt={4} color="text.primary">
         Real-Time Environment Monitoring
       </Typography>
 
