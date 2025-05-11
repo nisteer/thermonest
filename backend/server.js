@@ -3,7 +3,7 @@ const { InfluxDB, Point } = require('@influxdata/influxdb-client');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const expressJwt = require('express-jwt');
+const { expressjwt: expressJwt } = require('express-jwt');
 const jwksRsa = require('jwks-rsa');
 const config = require('./config');
 
