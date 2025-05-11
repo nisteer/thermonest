@@ -16,6 +16,7 @@ const influxDB = new InfluxDB({ url, token });
 
 // CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
+  'http://localhost:3000/',
   'https://thermonest.vercel.app',  // Frontend URL
   'https://thermonest-server.onrender.com', // Backend URL
 ];
@@ -42,7 +43,9 @@ const io = new Server(server, {
   },
 });
 
-// Emit real-time sensor data only for "1h"
+// Store users' locations and names
+let users = {};
+
 const emitSensorData = async (measurement, eventName) => {
   try {
     const queryApi = influxDB.getQueryApi(org);
@@ -73,6 +76,18 @@ let intervalId;
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
+  // Listen for location and name from the user
+  socket.on('sendLocation', (data) => {
+    const { name, position } = data;
+
+    // Store user's name and location
+    users[socket.id] = { name, position };
+
+    // Broadcast this user's location and name to all other clients
+    socket.broadcast.emit('receiveLocation', { name, position });
+  });
+
+  // Listen for "setTimeRange" event and emit data accordingly
   socket.on('setTimeRange', (range) => {
     if (intervalId) clearInterval(intervalId);
     if (range === '1h') {
@@ -85,6 +100,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+    delete users[socket.id]; // Remove user from the list when they disconnect
     if (intervalId) clearInterval(intervalId);
   });
 });
