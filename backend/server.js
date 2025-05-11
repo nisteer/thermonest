@@ -1,221 +1,80 @@
 const express = require('express');
 const { InfluxDB, Point } = require('@influxdata/influxdb-client');
 const cors = require('cors');
-const http = require('http');
 const { Server } = require('socket.io');
-const { expressjwt: expressJwt } = require('express-jwt');
-const jwksRsa = require('jwks-rsa');
+const http = require('http');
 const config = require('./config');
+const { expressjwt } = require('express-jwt');
+const jwksRsa = require('jwks-rsa');
 
 const app = express();
+
+// Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
 
+// InfluxDB config (make sure these values are set in your OnRender environment variables)
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-// Configurazione Auth0
-const auth0Domain = 'nisteer.eu.auth0.com';
-const audience = 'https://nisteer.eu.auth0.com/api/v2/';
+// JWT authentication middleware for verifying Auth0 JWT tokens
+const jwtCheck = expressjwt({
+  secret: jwksRsa.expressJwtSecret({
+    jwksUri: `https://${config.auth0.domain}/.well-known/jwks.json`
+  }),
+  audience: config.auth0.audience,
+  issuer: `https://${config.auth0.domain}/`,
+  algorithms: ['RS256']
+});
 
-app.use(express.json());
-
+// CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
-  'https://thermonest.vercel.app',
-  'https://thermonest-server.onrender.com',
+  'https://thermonest.vercel.app',  // Frontend URL
+  'https://thermonest-server.onrender.com', // Backend URL
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (allowedOrigins.includes(origin) || !origin) {
-      callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true); // Allow requests from allowed origins
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
     }
   },
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
 }));
 
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-    credentials: true,
-  },
-});
+// Middleware to parse JSON body
+app.use(express.json());
 
-// Configurazione middleware JWT per proteggere le rotte
-const jwtMiddleware = expressJwt({
-  secret: jwksRsa.expressJwtSecret({
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 5,
-    jwksUri: `https://${auth0Domain}/.well-known/jwks.json`,
-  }),
-  audience,
-  issuer: `https://${auth0Domain}/`,
-  algorithms: ['RS256'],
-}).unless({ path: ['/api/sensors', '/api/locations'] }); // escludi rotte che non richiedono autenticazione
+// REST API: Receive location data and send to InfluxDB
+app.post('/api/location', jwtCheck, async (req, res) => {
+  const { latitude, longitude } = req.body;
+  const { sub: userId, name: userName } = req.user; // Getting user details from the JWT token
 
-app.use(jwtMiddleware);
-
-// --- Sensor data (WebSocket streaming) ---
-const emitSensorData = async (measurement, eventName) => {
-  try {
-    const queryApi = influxDB.getQueryApi(org);
-    const query = `
-      from(bucket: "${bucket}")
-        |> range(start: -1h)
-        |> filter(fn: (r) => r._measurement == "${measurement}")
-        |> filter(fn: (r) => r._field == "value")
-    `;
-    const data = [];
-    await queryApi.queryRows(query, {
-      next(row, tableMeta) {
-        data.push(tableMeta.toObject(row));
-      },
-      error(error) {
-        console.error(`Error querying ${measurement}:`, error);
-      },
-      complete() {
-        io.emit(eventName, data);
-      }
-    });
-  } catch (error) {
-    console.error(`Error fetching ${measurement}:`, error);
-  }
-};
-
-let intervalId;
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('setTimeRange', (range) => {
-    if (intervalId) clearInterval(intervalId);
-    if (range === '1h') {
-      intervalId = setInterval(() => {
-        emitSensorData('humidity', 'humidity');
-        emitSensorData('temperature', 'temperature');
-      }, 5000);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-    if (intervalId) clearInterval(intervalId);
-  });
-});
-
-// --- REST endpoint: Fetch historical sensor data ---
-app.get('/api/sensors', async (req, res) => {
-  const { from } = req.query;
-  const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
-  if (!allowedRanges.includes(from)) {
-    return res.status(400).json({ error: 'Invalid "from" query parameter' });
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: 'Posizione non valida' });
   }
 
   try {
-    const queryApi = influxDB.getQueryApi(org);
-    const query = `
-      from(bucket: "${bucket}")
-        |> range(start: ${from}) 
-        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
-        |> filter(fn: (r) => r._field == "value")
-        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
-        |> keep(columns: ["_time", "temperature", "humidity"])
-        |> sort(columns: ["_time"])
-    `;
-    const data = [];
-    await queryApi.queryRows(query, {
-      next(row, tableMeta) {
-        data.push(tableMeta.toObject(row));
-      },
-      error(error) {
-        console.error('Query error:', error);
-        res.status(500).json({ error: error.toString() });
-      },
-      complete() {
-        res.json(data);
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching sensor data:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// --- REST endpoint: Save user location ---
-app.post('/api/location', async (req, res) => {
-  const { latitude, longitude, name, picture, userId } = req.body;
-
-  if (!latitude || !longitude || !userId) {
-    return res.status(400).json({ error: 'Missing data' });
-  }
-
-  try {
-    const writeApi = influxDB.getWriteApi(org, bucket, 'ns');
-
-    const point = new Point('user_location')
-      .tag('userId', userId)
-      .tag('name', name || '')
-      .tag('picture', picture || '')
+    const writeApi = influxDB.getWriteApi(org, bucket);
+    const point = new Point('location')
+      .tag('user_id', userId)  // Include user ID in the tags
+      .tag('username', userName) // Include username in the tags
       .floatField('latitude', latitude)
       .floatField('longitude', longitude);
 
     writeApi.writePoint(point);
-    await writeApi.close();
+    await writeApi.flush();
 
-    res.json({ success: true });
+    res.status(200).json({ success: 'Posizione registrata correttamente' });
   } catch (error) {
-    console.error('Error saving location:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Errore durante l\'invio della posizione:', error);
+    res.status(500).json({ error: 'Errore durante l\'invio della posizione' });
   }
 });
 
-// --- REST endpoint: Get latest user locations ---
-app.get('/api/locations', async (req, res) => {
-  try {
-    const queryApi = influxDB.getQueryApi(org);
-    const query = `
-      from(bucket: "${bucket}")
-        |> range(start: -5m)
-        |> filter(fn: (r) => r._measurement == "user_location")
-        |> last()
-    `;
-
-    const results = {};
-    await queryApi.queryRows(query, {
-      next(row, tableMeta) {
-        const o = tableMeta.toObject(row);
-        const uid = o.userId;
-        if (!results[uid]) {
-          results[uid] = {
-            userId: o.userId,
-            name: o.name,
-            picture: o.picture,
-            latitude: null,
-            longitude: null,
-          };
-        }
-        if (o._field === 'latitude') results[uid].latitude = o._value;
-        if (o._field === 'longitude') results[uid].longitude = o._value;
-      },
-      error(error) {
-        console.error('Error fetching locations:', error);
-        res.status(500).json({ error: 'Internal server error' });
-      },
-      complete() {
-        res.json(Object.values(results).filter(u => u.latitude && u.longitude));
-      }
-    });
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
+// Start the server
 server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`HTTP server running at http://localhost:${port}`);
 });
