@@ -2,7 +2,6 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "server.js",
-  
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
@@ -15,6 +14,8 @@
     "@influxdata/influxdb-client": "^1.35.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "express-jwt": "^8.5.1",
+    "jwks-rsa": "^3.2.0",
     "socket.io": "^4.8.1"
   }
 }
