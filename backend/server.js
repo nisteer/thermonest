@@ -4,7 +4,7 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const http = require('http');
 const config = require('./config');
-const { jwt } = require('express-jwt');
+const { expressjwt: jwt } = require('express-jwt');
 const jwksRsa = require('jwks-rsa');
 
 const app = express();
