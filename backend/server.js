@@ -9,48 +9,65 @@ const jwksRsa = require('jwks-rsa');
 
 const app = express();
 
+// Create HTTP server (NECESSARIO per socket.io)
+const server = http.createServer(app);
+
+// Socket.IO setup (puoi rimuoverlo se non usi websocket per ora)
+const io = new Server(server, {
+  cors: {
+    origin: [
+      'https://thermonest.vercel.app',
+      'https://thermonest-server.onrender.com',
+    ],
+    methods: ['GET', 'POST'],
+  },
+});
+
 // Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
 
-// InfluxDB config (make sure these values are set in your OnRender environment variables)
+// InfluxDB config
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-// JWT authentication middleware for verifying Auth0 JWT tokens
+// Auth0 JWT check middleware
 const jwtCheck = expressjwt({
   secret: jwksRsa.expressJwtSecret({
-    jwksUri: `https://${config.auth0.domain}/.well-known/jwks.json`
+    cache: true,
+    rateLimit: true,
+    jwksRequestsPerMinute: 5,
+    jwksUri: `https://${config.auth0.domain}/.well-known/jwks.json`,
   }),
   audience: config.auth0.audience,
   issuer: `https://${config.auth0.domain}/`,
-  algorithms: ['RS256']
+  algorithms: ['RS256'],
 });
 
-// CORS configuration for production (OnRender) and development (localhost)
+// CORS setup
 const allowedOrigins = [
-  'https://thermonest.vercel.app',  // Frontend URL
-  'https://thermonest-server.onrender.com', // Backend URL
+  'https://thermonest.vercel.app',
+  'https://thermonest-server.onrender.com',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true); // Allow requests from allowed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
+      callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Middleware to parse JSON body
+// Parse JSON
 app.use(express.json());
 
-// REST API: Receive location data and send to InfluxDB
+// Protected route to receive and store user location
 app.post('/api/location', jwtCheck, async (req, res) => {
   const { latitude, longitude } = req.body;
-  const { sub: userId, name: userName } = req.user; // Getting user details from the JWT token
+  const { sub: userId, name: userName } = req.user;
 
   if (!latitude || !longitude) {
     return res.status(400).json({ error: 'Posizione non valida' });
@@ -59,8 +76,8 @@ app.post('/api/location', jwtCheck, async (req, res) => {
   try {
     const writeApi = influxDB.getWriteApi(org, bucket);
     const point = new Point('location')
-      .tag('user_id', userId)  // Include user ID in the tags
-      .tag('username', userName) // Include username in the tags
+      .tag('user_id', userId)
+      .tag('username', userName || 'unknown')
       .floatField('latitude', latitude)
       .floatField('longitude', longitude);
 
@@ -69,12 +86,12 @@ app.post('/api/location', jwtCheck, async (req, res) => {
 
     res.status(200).json({ success: 'Posizione registrata correttamente' });
   } catch (error) {
-    console.error('Errore durante l\'invio della posizione:', error);
+    console.error('Errore InfluxDB:', error);
     res.status(500).json({ error: 'Errore durante l\'invio della posizione' });
   }
 });
 
-// Start the server
+// Start server
 server.listen(port, () => {
-  console.log(`HTTP server running at http://localhost:${port}`);
+  console.log(`✅ Server running on http://localhost:${port}`);
 });
