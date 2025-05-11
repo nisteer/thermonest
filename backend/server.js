@@ -4,13 +4,10 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const http = require('http');
 const config = require('./config');
-const { expressjwt: jwt } = require('express-jwt');
-const jwksRsa = require('jwks-rsa');
 
 const app = express();
 const port = process.env.PORT || 5000;
 const { url, token, org, bucket } = config.influxDB;
-const { domain, audience } = config.auth0;
 const influxDB = new InfluxDB({ url, token });
 
 app.use(express.json());
@@ -30,7 +27,7 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type'],
 }));
 
 const server = http.createServer(app);
@@ -43,27 +40,14 @@ const io = new Server(server, {
   },
 });
 
-// Auth0 middleware
-const checkJwt = jwt({
-  secret: jwksRsa.expressJwtSecret({
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 5,
-    jwksUri: `https://${domain}/.well-known/jwks.json`
-  }),
-  audience: audience,
-  issuer: `https://${domain}/`,
-  algorithms: ['RS256']
-});
-
 // In-memory active users (not persistent)
 const activeUsers = new Map();
 
-app.post('/api/location', checkJwt, (req, res) => {
-  const { latitude, longitude } = req.body;
-  const { sub, name, picture } = req.auth; // user info from token
+// API endpoint to save location
+app.post('/api/location', (req, res) => {
+  const { latitude, longitude, name, picture } = req.body;
 
-  activeUsers.set(sub, {
+  activeUsers.set(name, {
     name,
     picture,
     latitude,
@@ -74,7 +58,8 @@ app.post('/api/location', checkJwt, (req, res) => {
   res.sendStatus(200);
 });
 
-app.get('/api/active-users', checkJwt, (req, res) => {
+// API endpoint to get active users
+app.get('/api/active-users', (req, res) => {
   const now = Date.now();
   const active = [];
 
@@ -87,6 +72,7 @@ app.get('/api/active-users', checkJwt, (req, res) => {
   res.json(active);
 });
 
+// Periodically clean up inactive users
 setInterval(() => {
   const now = Date.now();
   for (const [key, user] of activeUsers.entries()) {
@@ -95,6 +81,28 @@ setInterval(() => {
     }
   }
 }, 30000);
+
+// Set up Socket.io to emit sensor data every 5 seconds
+let intervalId;
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.on('setTimeRange', (range) => {
+    if (intervalId) clearInterval(intervalId);
+    if (range === '1h') {
+      intervalId = setInterval(() => {
+        // Emit sensor data to the client
+        emitSensorData('humidity', 'humidity');
+        emitSensorData('temperature', 'temperature');
+      }, 5000);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    if (intervalId) clearInterval(intervalId);
+  });
+});
 
 const emitSensorData = async (measurement, eventName) => {
   try {
@@ -121,65 +129,6 @@ const emitSensorData = async (measurement, eventName) => {
     console.error(`Error fetching ${measurement}:`, error);
   }
 };
-
-let intervalId;
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('setTimeRange', (range) => {
-    if (intervalId) clearInterval(intervalId);
-    if (range === '1h') {
-      intervalId = setInterval(() => {
-        emitSensorData('humidity', 'humidity');
-        emitSensorData('temperature', 'temperature');
-      }, 5000);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-    if (intervalId) clearInterval(intervalId);
-  });
-});
-
-app.get('/api/sensors', async (req, res) => {
-  const { from } = req.query;
-  const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
-  if (!allowedRanges.includes(from)) {
-    return res.status(400).json({ error: 'Invalid "from" query parameter' });
-  }
-
-  try {
-    const queryApi = influxDB.getQueryApi(org);
-    const query = `
-      from(bucket: "${bucket}")
-        |> range(start: ${from}) 
-        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
-        |> filter(fn: (r) => r._field == "value")
-        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
-        |> keep(columns: ["_time", "temperature", "humidity"])
-        |> sort(columns: ["_time"])
-    `;
-
-    const data = [];
-    await queryApi.queryRows(query, {
-      next(row, tableMeta) {
-        const o = tableMeta.toObject(row);
-        data.push(o);
-      },
-      error(error) {
-        console.error('Query error:', error);
-        res.status(500).json({ error: error.toString() });
-      },
-      complete() {
-        res.json(data);
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching sensor data:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 server.listen(port, () => {
   console.log(`HTTP server running at http://localhost:${port}`);
