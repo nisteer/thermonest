@@ -6,24 +6,26 @@ const http = require('http');
 const config = require('./config');
 
 const app = express();
+
+// Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
+
+// InfluxDB config (make sure these values are set in your OnRender environment variables)
 const { url, token, org, bucket } = config.influxDB;
 const influxDB = new InfluxDB({ url, token });
 
-app.use(express.json());
-
+// CORS configuration for production (OnRender) and development (localhost)
 const allowedOrigins = [
-  'http://localhost:3000',
-  'https://thermonest.vercel.app',
-  'https://thermonest-server.onrender.com',
+  'https://thermonest.vercel.app',  // Frontend URL
+  'https://thermonest-server.onrender.com', // Backend URL
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
+      callback(null, true); // Allow requests from allowed origins
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
     }
   },
   methods: ['GET', 'POST'],
@@ -36,74 +38,11 @@ const io = new Server(server, {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
-    credentials: true,
+    credentials: true, // Allow cookies to be sent with requests if needed
   },
 });
 
-// In-memory active users (not persistent)
-const activeUsers = new Map();
-
-// API endpoint to save location
-app.post('/api/location', (req, res) => {
-  const { latitude, longitude, name, picture } = req.body;
-
-  activeUsers.set(name, {
-    name,
-    picture,
-    latitude,
-    longitude,
-    timestamp: Date.now(),
-  });
-
-  res.sendStatus(200);
-});
-
-// API endpoint to get active users
-app.get('/api/active-users', (req, res) => {
-  const now = Date.now();
-  const active = [];
-
-  for (const [_, user] of activeUsers.entries()) {
-    if (now - user.timestamp < 60000) {
-      active.push(user);
-    }
-  }
-
-  res.json(active);
-});
-
-// Periodically clean up inactive users
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, user] of activeUsers.entries()) {
-    if (now - user.timestamp >= 60000) {
-      activeUsers.delete(key);
-    }
-  }
-}, 30000);
-
-// Set up Socket.io to emit sensor data every 5 seconds
-let intervalId;
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('setTimeRange', (range) => {
-    if (intervalId) clearInterval(intervalId);
-    if (range === '1h') {
-      intervalId = setInterval(() => {
-        // Emit sensor data to the client
-        emitSensorData('humidity', 'humidity');
-        emitSensorData('temperature', 'temperature');
-      }, 5000);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-    if (intervalId) clearInterval(intervalId);
-  });
-});
-
+// Emit real-time sensor data only for "1h"
 const emitSensorData = async (measurement, eventName) => {
   try {
     const queryApi = influxDB.getQueryApi(org);
@@ -129,6 +68,68 @@ const emitSensorData = async (measurement, eventName) => {
     console.error(`Error fetching ${measurement}:`, error);
   }
 };
+
+let intervalId;
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.on('setTimeRange', (range) => {
+    if (intervalId) clearInterval(intervalId);
+    if (range === '1h') {
+      intervalId = setInterval(() => {
+        emitSensorData('humidity', 'humidity');
+        emitSensorData('temperature', 'temperature');
+      }, 5000);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    if (intervalId) clearInterval(intervalId);
+  });
+});
+
+// REST API: Fetch historical data
+app.get('/api/sensors', async (req, res) => {
+  const { from } = req.query;
+
+  // Sanitize 'from' to prevent query injection
+  const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
+  if (!allowedRanges.includes(from)) {
+    return res.status(400).json({ error: 'Invalid "from" query parameter' });
+  }
+
+  try {
+    const queryApi = influxDB.getQueryApi(org);
+    const query = `
+      from(bucket: "${bucket}")
+        |> range(start: ${from}) 
+        |> filter(fn: (r) => r._measurement == "temperature" or r._measurement == "humidity")
+        |> filter(fn: (r) => r._field == "value")
+        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
+        |> keep(columns: ["_time", "temperature", "humidity"])
+        |> sort(columns: ["_time"])
+    `;
+
+    const data = [];
+    await queryApi.queryRows(query, {
+      next(row, tableMeta) {
+        const o = tableMeta.toObject(row);
+        data.push(o);
+      },
+      error(error) {
+        console.error('Query error:', error);
+        res.status(500).json({ error: error.toString() });
+      },
+      complete() {
+        res.json(data);
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching sensor data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 server.listen(port, () => {
   console.log(`HTTP server running at http://localhost:${port}`);

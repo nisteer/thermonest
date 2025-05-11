@@ -7,7 +7,6 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Sensors from './pages/Sensors';
-import Map from './pages/Map';
 
 const lightTheme = createTheme({
   palette: {
@@ -65,7 +64,6 @@ const App = () => {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/sensors" element={<Sensors theme={useDarkTheme ? darkTheme : lightTheme} />} />
-              <Route path="/map" element={<Map theme={useDarkTheme ? darkTheme : lightTheme} />} />
             </Routes>
           </Box>
         </Box>

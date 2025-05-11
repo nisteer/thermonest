@@ -15,7 +15,6 @@ import { Link } from 'react-router-dom';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeviceThermostatIcon from '@mui/icons-material/DeviceThermostat';
 import { useMediaQuery } from '@mui/material';
-import MapIcon from '@mui/icons-material/Map';
 
 const drawerWidth = 240;
 const collapsedWidth = 72;
@@ -122,37 +121,6 @@ const Sidebar = () => {
               </ListItemIcon>
               <ListItemText 
                 primary="Sensors" 
-                sx={{ 
-                  opacity: open ? 1 : 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }} 
-              />
-            </ListItemButton>
-          </ListItem>
-
-          <ListItem disablePadding sx={{ display: 'block', overflow: 'hidden' }}>
-            <ListItemButton
-              component={Link}
-              to="/map"
-              sx={{
-                minHeight: 48,
-                justifyContent: open ? 'initial' : 'center',
-                px: 2.5,
-                overflow: 'hidden',
-              }}
-            >
-              <ListItemIcon
-                sx={{
-                  minWidth: 0,
-                  mr: open ? 3 : 'auto',
-                  justifyContent: 'center',
-                }}
-              >
-                <MapIcon />
-              </ListItemIcon>
-              <ListItemText 
-                primary="Map" 
                 sx={{ 
                   opacity: open ? 1 : 0,
                   overflow: 'hidden',
