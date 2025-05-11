@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DeviceThermostatIcon from '@mui/icons-material/DeviceThermostat';
 import { useMediaQuery } from '@mui/material';
+import MapIcon from '@mui/icons-material/Map';
 
 const drawerWidth = 240;
 const collapsedWidth = 72;
@@ -22,8 +23,6 @@ const collapsedWidth = 72;
 const Sidebar = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  // Sidebar open/close state based on screen size (no manual toggle)
   const open = !isMobile;
 
   return (
@@ -33,16 +32,16 @@ const Sidebar = () => {
         width: open ? drawerWidth : collapsedWidth,
         flexShrink: 0,
         whiteSpace: 'nowrap',
-        overflowX: 'hidden', // Hide horizontal overflow
+        overflowX: 'hidden',
         [`& .MuiDrawer-paper`]: {
           width: open ? drawerWidth : collapsedWidth,
-          overflowX: 'hidden', // Hide horizontal overflow in paper
+          overflowX: 'hidden',
           transition: theme.transitions.create('width', {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
           }),
           '&::-webkit-scrollbar': {
-            display: 'none', // Hide scrollbar (optional)
+            display: 'none',
           },
         },
       }}
@@ -53,20 +52,19 @@ const Sidebar = () => {
           alignItems: 'center',
           justifyContent: 'space-between',
           px: [2],
-          overflow: 'hidden', // Ensure no overflow in toolbar
+          overflow: 'hidden',
         }}
-      >
-      </Toolbar>
+      />
       
       <Divider />
       
       <Box 
         sx={{ 
           overflowY: 'auto',
-          overflowX: 'hidden', // Hide horizontal overflow
-          height: 'calc(100vh - 64px)', // Adjust height considering toolbar
+          overflowX: 'hidden',
+          height: 'calc(100vh - 64px)',
           '&::-webkit-scrollbar': {
-            display: 'none', // Hide scrollbar (optional)
+            display: 'none',
           },
         }}
       >
@@ -124,6 +122,37 @@ const Sidebar = () => {
               </ListItemIcon>
               <ListItemText 
                 primary="Sensors" 
+                sx={{ 
+                  opacity: open ? 1 : 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }} 
+              />
+            </ListItemButton>
+          </ListItem>
+
+          <ListItem disablePadding sx={{ display: 'block', overflow: 'hidden' }}>
+            <ListItemButton
+              component={Link}
+              to="/map"
+              sx={{
+                minHeight: 48,
+                justifyContent: open ? 'initial' : 'center',
+                px: 2.5,
+                overflow: 'hidden',
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: 0,
+                  mr: open ? 3 : 'auto',
+                  justifyContent: 'center',
+                }}
+              >
+                <MapIcon />
+              </ListItemIcon>
+              <ListItemText 
+                primary="Map" 
                 sx={{ 
                   opacity: open ? 1 : 0,
                   overflow: 'hidden',

@@ -90,6 +90,74 @@ io.on('connection', (socket) => {
   });
 });
 
+// Save user location
+app.post('/api/location', async (req, res) => {
+  const { name, email, picture, coords } = req.body;
+
+  if (!coords || !email || !name || !picture) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    const writeApi = influxDB.getWriteApi(org, bucket, 'ns');
+    const point = new Point('user_location')
+      .tag('email', email)
+      .tag('name', name)
+      .tag('picture', picture)
+      .floatField('lat', coords[0])
+      .floatField('lng', coords[1])
+      .timestamp(new Date());
+
+    writeApi.writePoint(point);
+    await writeApi.close();
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Write error:', error);
+    res.status(500).json({ error: 'Failed to write location' });
+  }
+});
+
+// Get all shared user locations
+app.get('/api/location', async (req, res) => {
+  try {
+    const queryApi = influxDB.getQueryApi(org);
+    const query = `
+      from(bucket: "${bucket}")
+        |> range(start: -1h)
+        |> filter(fn: (r) => r._measurement == "user_location")
+        |> last()
+    `;
+
+    const users = {};
+    await queryApi.queryRows(query, {
+      next(row, tableMeta) {
+        const o = tableMeta.toObject(row);
+        const email = o.email;
+        if (!users[email]) {
+          users[email] = {
+            name: o.name,
+            email,
+            picture: o.picture,
+            coords: [null, null],
+          };
+        }
+        if (o._field === 'lat') users[email].coords[0] = o._value;
+        if (o._field === 'lng') users[email].coords[1] = o._value;
+      },
+      error(error) {
+        console.error('Location query error:', error);
+        res.status(500).json({ error: error.toString() });
+      },
+      complete() {
+        res.json(Object.values(users).filter(u => u.coords[0] && u.coords[1]));
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching locations:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // REST API: Fetch historical data
 app.get('/api/sensors', async (req, res) => {
   const { from } = req.query;
