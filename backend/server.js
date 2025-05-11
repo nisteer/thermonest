@@ -4,33 +4,33 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const http = require('http');
 const config = require('./config');
+const jwt = require('express-jwt');
+const jwksRsa = require('jwks-rsa');
 
 const app = express();
-
-// Use PORT environment variable for OnRender or default to 5000 in development
 const port = process.env.PORT || 5000;
-
-// InfluxDB config (make sure these values are set in your OnRender environment variables)
 const { url, token, org, bucket } = config.influxDB;
+const { domain, audience } = config.auth0;
 const influxDB = new InfluxDB({ url, token });
 
-// CORS configuration for production (OnRender) and development (localhost)
+app.use(express.json());
+
 const allowedOrigins = [
-  'http://localhost:3000',  // Local development
-  'https://thermonest.vercel.app',  // Frontend URL
-  'https://thermonest-server.onrender.com', // Backend URL
+  'http://localhost:3000',
+  'https://thermonest.vercel.app',
+  'https://thermonest-server.onrender.com',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true); // Allow requests from allowed origins
+      callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS')); // Reject requests from other origins
+      callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 const server = http.createServer(app);
@@ -39,11 +39,63 @@ const io = new Server(server, {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
-    credentials: true, // Allow cookies to be sent with requests if needed
+    credentials: true,
   },
 });
 
-// Emit real-time sensor data only for "1h"
+// Auth0 middleware
+const checkJwt = jwt({
+  secret: jwksRsa.expressJwtSecret({
+    cache: true,
+    rateLimit: true,
+    jwksRequestsPerMinute: 5,
+    jwksUri: `https://${domain}/.well-known/jwks.json`
+  }),
+  audience: audience,
+  issuer: `https://${domain}/`,
+  algorithms: ['RS256']
+});
+
+// In-memory active users (not persistent)
+const activeUsers = new Map();
+
+app.post('/api/location', checkJwt, (req, res) => {
+  const { latitude, longitude } = req.body;
+  const { sub, name, picture } = req.auth; // user info from token
+
+  activeUsers.set(sub, {
+    name,
+    picture,
+    latitude,
+    longitude,
+    timestamp: Date.now(),
+  });
+
+  res.sendStatus(200);
+});
+
+app.get('/api/active-users', checkJwt, (req, res) => {
+  const now = Date.now();
+  const active = [];
+
+  for (const [_, user] of activeUsers.entries()) {
+    if (now - user.timestamp < 60000) {
+      active.push(user);
+    }
+  }
+
+  res.json(active);
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, user] of activeUsers.entries()) {
+    if (now - user.timestamp >= 60000) {
+      activeUsers.delete(key);
+    }
+  }
+}, 30000);
+
 const emitSensorData = async (measurement, eventName) => {
   try {
     const queryApi = influxDB.getQueryApi(org);
@@ -90,11 +142,8 @@ io.on('connection', (socket) => {
   });
 });
 
-// REST API: Fetch historical data
 app.get('/api/sensors', async (req, res) => {
   const { from } = req.query;
-
-  // Sanitize 'from' to prevent query injection
   const allowedRanges = ['-1h', '-6h', '-12h', '-24h', '-168h', '-336h', '-720h'];
   if (!allowedRanges.includes(from)) {
     return res.status(400).json({ error: 'Invalid "from" query parameter' });

@@ -17,7 +17,6 @@ import { useAuth0 } from '@auth0/auth0-react';
 // Rimuove i marker default di Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 
-// Funzione per creare un'icona personalizzata da un'immagine (profilo)
 const createAvatarIcon = (imageUrl) =>
   new L.Icon({
     iconUrl: imageUrl,
@@ -27,14 +26,38 @@ const createAvatarIcon = (imageUrl) =>
     popupAnchor: [0, -40],
   });
 
-const MapPage = () => {
+const Map = () => {
   const theme = useTheme();
   const [userLocation, setUserLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [shareLocation, setShareLocation] = useState(false);
+  const [activeUsers, setActiveUsers] = useState([]);
 
   const { user, isAuthenticated, getAccessTokenSilently, loginWithRedirect } = useAuth0();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const fetchActiveUsers = async () => {
+      try {
+        const token = await getAccessTokenSilently();
+        const res = await fetch('/api/active-users', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json();
+        setActiveUsers(data);
+      } catch (err) {
+        console.error('Errore durante il recupero degli utenti attivi:', err);
+      }
+    };
+
+    fetchActiveUsers();
+    const interval = setInterval(fetchActiveUsers, 15000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, getAccessTokenSilently]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -59,7 +82,6 @@ const MapPage = () => {
 
           try {
             const token = await getAccessTokenSilently();
-
             await fetch('/api/location', {
               method: 'POST',
               headers: {
@@ -93,6 +115,10 @@ const MapPage = () => {
     setShareLocation(event.target.checked);
   };
 
+  const mapCenter = userLocation
+    ? [userLocation.lat, userLocation.lng]
+    : [41.9028, 12.4964]; // Default: Roma
+
   return (
     <Paper sx={{ padding: 2, mt: 7 }}>
       <Typography variant="h5" gutterBottom>
@@ -100,9 +126,7 @@ const MapPage = () => {
       </Typography>
 
       <FormControlLabel
-        control={
-          <Switch checked={shareLocation} onChange={handleToggleShare} />
-        }
+        control={<Switch checked={shareLocation} onChange={handleToggleShare} />}
         label="Condividi la mia posizione"
         sx={{ mb: 2 }}
       />
@@ -115,29 +139,28 @@ const MapPage = () => {
         </Box>
       )}
 
-      {!loading && shareLocation && userLocation && user && (
-        <MapContainer
-          center={[userLocation.lat, userLocation.lng]}
-          zoom={13}
-          style={{ height: '500px', width: '100%' }}
-        >
+      {!loading && (
+        <MapContainer center={mapCenter} zoom={5} style={{ height: '500px', width: '100%' }}>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <Marker
-            position={[userLocation.lat, userLocation.lng]}
-            icon={createAvatarIcon(user.picture)}
-          >
-            <Popup>
-              <strong>{user.name}</strong><br />
-              Tu sei qui.
-            </Popup>
-          </Marker>
+
+          {activeUsers.map((u, index) => (
+            <Marker
+              key={index}
+              position={[u.latitude, u.longitude]}
+              icon={createAvatarIcon(u.picture)}
+            >
+              <Popup>
+                <strong>{u.name}</strong>
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
       )}
     </Paper>
   );
 };
 
-export default MapPage;
+export default Map;
